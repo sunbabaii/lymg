@@ -11,14 +11,14 @@ A professional-grade call recording module for Magisk that captures audio from a
 - Simultaneous capture from multiple sources
 
 📞 **Call Detection & Auto-Recording**
-- Automatic call detection (system calls, WeChat, etc.)
+- Automatic call detection (system calls)
 - Auto-start recording on incoming/outgoing calls
 - Auto-stop and save on call end
 - Manual recording control via key combination
 
 🎛️ **Key Combination Control**
-- **Power + Volume Up + Volume Down** = Toggle Recording
-- Long-press (>2 seconds) for reliable detection
+- **Volume Up + Power** = Toggle Recording (Start/Stop)
+- Long-press (>1 second) for reliable detection
 - Minimal latency
 
 🔋 **Low Power Consumption**
@@ -45,6 +45,7 @@ A professional-grade call recording module for Magisk that captures audio from a
 - **Magisk** v20.0 or higher
 - **ColorOS 13** (Android 13) or compatible
 - **Device with root access**
+- **FFmpeg** or **ALSA** tools (installed on device)
 
 ### Steps
 
@@ -64,7 +65,8 @@ unzip lymg-1.0.zip -d /data/adb/modules/lymg
 
 # Set permissions
 chmod -R 0755 /data/adb/modules/lymg/scripts/
-chmod 0644 /data/adb/modules/lymg/module.prop
+chmod 755 /data/adb/modules/lymg/service.sh
+chmod 755 /data/adb/modules/lymg/post-fs-data.sh
 
 # Reboot
 reboot
@@ -72,37 +74,36 @@ reboot
 
 ## Usage
 
-### Auto Recording (Call Detection)
-1. Enable auto-recording in config: `CALL_AUTO_RECORD=1`
-2. Module automatically starts recording when a call is detected
-3. Recording stops automatically when call ends
-4. Files saved to `/data/lymg/recordings/`
-
 ### Manual Recording
 
 **Start Recording:**
-- Press **Power + Volume Up + Volume Down** simultaneously (hold for ~2 seconds)
-- LED indicator (if available) blinks or notification appears
-- Recording begins immediately
+- Press and hold **Volume Up + Power** simultaneously (hold for ~1 second)
+- Check logs: `adb shell tail /data/lymg/lymg.log` should show "Recording started"
+- Recording file will be created in `/data/lymg/recordings/`
 
 **Stop Recording:**
-- Press **Power + Volume Up + Volume Down** again
-- Recording saves with timestamp name
-- Optional: Post-processing (trimming, compression)
+- Press and hold **Volume Up + Power** again
+- Recording will stop and file will be saved with timestamp
+
+### Auto-Recording (Call Detection)
+1. Enable auto-recording in config: `AUTO_CALL_RECORD=1` (default)
+2. Module automatically starts recording when an incoming or outgoing call is detected
+3. Recording stops automatically when call ends
+4. Files saved to `/data/lymg/recordings/`
 
 ## Configuration
 
 Edit `/data/lymg/config/settings.conf`:
 
 ```ini
-# Audio format (AAC, MP3, OGG, FLAC)
-RECORDING_FORMAT=AAC
+# Audio format (aac, mp3)
+RECORDING_FORMAT=aac
 
 # Audio quality
 BITRATE=128k
 SAMPLE_RATE=48000
 
-# Auto-recording
+# Auto-recording on calls
 AUTO_CALL_RECORD=1
 
 # Audio source selection
@@ -122,7 +123,7 @@ BITRATE=64k
 SAMPLE_RATE=16000
 ```
 
-**Standard Quality** (balanced):
+**Standard Quality** (balanced - recommended):
 ```ini
 BITRATE=128k
 SAMPLE_RATE=48000
@@ -130,7 +131,7 @@ SAMPLE_RATE=48000
 
 **High Quality** (best fidelity):
 ```ini
-BITRATE=320k
+BITRATE=256k
 SAMPLE_RATE=48000
 ```
 
@@ -144,58 +145,117 @@ SAMPLE_RATE=48000
 │   └── ...
 ├── config/
 │   └── settings.conf        # Configuration file
-├── cache/                   # Temporary files
-├── lib/                     # Shared libraries
 ├── lymg.log                 # Main log file
 ├── daemon.pid               # Main daemon PID
-├── call_detector.pid        # Call detector PID
-└── key_listener.pid         # Key listener PID
+└── call_monitor.pid         # Call monitor PID
 ```
 
 ## Troubleshooting
 
 ### No Recording Files Created
-1. **Check permissions**: `ls -la /data/lymg/`
-2. **Check logs**: `tail -50 /data/lymg/lymg.log`
-3. **Verify daemon**: `ps aux | grep lymg`
-4. **Restart module**: Disable/Enable in Magisk Manager
+
+1. **Check if module is loaded:**
+   ```bash
+   adb shell ls /data/adb/modules/lymg/
+   ```
+
+2. **Check if daemon is running:**
+   ```bash
+   adb shell ps aux | grep lymg
+   ```
+   Should see: `lymg-daemon.sh` and `key-listener.sh`
+
+3. **Check logs:**
+   ```bash
+   adb shell tail -100 /data/lymg/lymg.log
+   ```
+   Look for errors or warnings
+
+4. **Verify audio tools are available:**
+   ```bash
+   adb shell which ffmpeg
+   adb shell which arecord
+   ```
+   At least one should exist
+
+5. **Test manual recording:**
+   ```bash
+   # Try pressing Volume+ + Power
+   # Check logs for "Key combo detected"
+   adb shell tail -f /data/lymg/lymg.log
+   ```
+
+6. **Restart daemon:**
+   ```bash
+   adb shell killall lymg-daemon.sh
+   adb shell killall key-listener.sh
+   adb reboot
+   ```
 
 ### Key Combination Not Working
-1. **Verify key events**: `getevent | head -20` (in terminal)
-2. **Check device support**: Some phones may need custom mapping
-3. **Try individual keys**: Power, Vol+, Vol- separately
-4. **Check log**: `grep KEY_LISTENER /data/lymg/lymg.log`
 
-### Low Audio Quality
-1. **Check bitrate setting**: Should be ≥128k for clear audio
-2. **Check sample rate**: 48000 Hz recommended for calls
-3. **Verify microphone**: Test with system recorder app
-4. **Clean microphone**: Physical obstruction reduces quality
+1. **Test if device detects key events:**
+   ```bash
+   adb shell getevent
+   # Press Volume Up + Power
+   # Should see KEY_VOLUMEUP and KEY_POWER events
+   ```
+
+2. **If not detected, device may need custom key mapping**
+   - Check your device's key codes using: `adb shell getevent | grep KEY`
+   - Report the actual key codes and we can update the script
+
+3. **Check key listener logs:**
+   ```bash
+   adb shell grep "KEY_LISTENER" /data/lymg/lymg.log
+   ```
+
+### Low Audio Quality or No Sound
+
+1. **Check if recording file has data:**
+   ```bash
+   adb shell ls -lh /data/lymg/recordings/
+   ```
+   File should be > 100KB per minute
+
+2. **Increase bitrate:**
+   ```bash
+   adb shell "echo 'BITRATE=256k' >> /data/lymg/config/settings.conf"
+   ```
+   Then restart daemon
+
+3. **Verify microphone works:**
+   - Open system voice recorder app
+   - Test if it records audio normally
+   - If it doesn't, microphone may be blocked
 
 ### Recording Stops Unexpectedly
-1. **Check storage space**: `df -h /data`
-2. **Check log for errors**: `tail -100 /data/lymg/lymg.log`
-3. **Disable auto-stop**: Set `AUTO_CALL_RECORD=0` to test manual mode
-4. **Monitor resources**: Check RAM/CPU usage while recording
 
-### Module Fails to Install
-1. **Verify Magisk version**: Must be v20.0+
-2. **Check module.prop syntax**: No special characters
-3. **Verify disk space**: Need ~500MB minimum
-4. **Check boot logs**: `logcat | grep lymg`
+1. **Check storage space:**
+   ```bash
+   adb shell df -h /data
+   ```
+   Should have at least 500MB free
+
+2. **Check if process is killed:**
+   ```bash
+   adb shell tail -50 /data/lymg/lymg.log | grep -i error
+   ```
+
+3. **Enable debug logging:**
+   ```bash
+   adb shell "sed -i 's/LOG_LEVEL=INFO/LOG_LEVEL=DEBUG/' /data/lymg/config/settings.conf"
+   ```
 
 ## Advanced Usage
 
-### Custom Recording Script
-Create `/data/lymg/custom-recorder.sh` for custom audio routing.
-
 ### Export Recordings
 ```bash
-# Copy to PC via adb
-adb pull /data/lymg/recordings/ ./call_recordings/
+# Copy to PC
+adb pull /data/lymg/recordings/ ./my_recordings/
 
-# Or mount storage
-adb shell mount -o rw,remount /data
+# Or specific file
+adb pull /data/lymg/recordings/call_20250523_140530.aac ./
 ```
 
 ### Monitor in Real-Time
@@ -203,83 +263,56 @@ adb shell mount -o rw,remount /data
 # Watch logs
 adb shell tail -f /data/lymg/lymg.log
 
-# Monitor processes
-adb shell ps aux | grep lymg
+# Monitor key events
+adb shell getevent | grep -E "KEY_POWER|KEY_VOLUMEUP"
+```
 
-# Check key events
-adb shell getevent
+### Disable Auto-Call Recording
+```bash
+adb shell "echo 'AUTO_CALL_RECORD=0' > /data/lymg/config/settings.conf"
 ```
 
 ## Performance Impact
 
 - **CPU Usage**: <2% idle, <5% during recording
-- **Memory**: ~15-25 MB resident, <50 MB during active recording
+- **Memory**: ~15-25 MB resident
 - **Battery**: ~5-10% additional drain during active recording
 - **Storage**: ~1 MB per minute at 128k bitrate
 
 ## Privacy & Legal Notice
 
-⚠️ **Important**: Call recording laws vary by jurisdiction. 
+⚠️ **Important**: Call recording laws vary by jurisdiction.
 - Some regions require **all parties consent** before recording
 - Check local laws before using this module
 - **Use responsibly** and respect privacy
 - **Developer not responsible** for misuse
 
-## Known Limitations
+## Uninstall
 
-- ⚠️ Some call apps (Google Meet, WhatsApp) may have detection mechanisms
-- ⚠️ Certain devices may require additional system props
-- ⚠️ Some ROMs may have conflicts with audio routing
-- ⚠️ Deep sleep may pause recording on some devices
-- ⚠️ Dual SIM devices may require manual testing
+### Via Magisk Manager
+1. Open Magisk Manager
+2. Go to Modules
+3. Find "LYMG" and tap the trash icon
+4. Reboot
 
-## Compatibility
-
-| Device | ROM | Status | Notes |
-|--------|-----|--------|-------|
-| ColorOS 13 | Android 13 | ✅ Tested | Full support |
-| OxygenOS 13 | Android 13 | ✅ Should work | Similar to ColorOS |
-| MIUI 13 | Android 13 | ⚠️ Untested | May need adjustments |
-| Custom ROMs | Varies | ⚠️ Case-by-case | YMMV |
-
-## Development & Debugging
-
-### Enable Debug Logging
+### Via ADB
 ```bash
-# Change log level
-adb shell "echo 'LOG_LEVEL=DEBUG' >> /data/lymg/config/settings.conf"
-
-# Restart daemon
-adb shell "killall lymg-daemon.sh"
+adb shell rm -rf /data/adb/modules/lymg
+adb shell rm -rf /data/lymg
+adb reboot
 ```
 
-### Capture System Logs
-```bash
-adb logcat | grep lymg > lymg-debug.log
-```
+## Support
 
-### Manual Testing
-```bash
-# Test recording manually
-adb shell "/system/bin/sh /data/lymg/scripts/audio-recorder.sh /data/lymg/test.aac 5 mic"
+If you encounter issues:
 
-# Test call detection
-adb shell "setprop android.telephony.call.state 2"
-```
-
-## Support & Issues
-
-- **Issues with module**: Check `/data/lymg/lymg.log` first
-- **Report bugs**: Describe your device, ColorOS version, and include logs
-- **Feature requests**: Provide detailed use case
+1. **Check the log:** `adb shell cat /data/lymg/lymg.log`
+2. **Enable debug mode** in config
+3. **Report with logs** for further assistance
 
 ## License
 
-This module is provided **as-is** for educational and personal use only.
-
-## Credits
-
-Built with modern Magisk module standards and Android audio framework integration.
+This module is provided **as-is** for personal use only.
 
 ---
 
