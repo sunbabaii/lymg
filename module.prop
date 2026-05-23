@@ -1,0 +1,6 @@
+id=lymg
+name=Call Recorder - LYMG
+version=1.0
+versionCode=1
+author=sunbabaii
+description=Advanced call recording module with key trigger support. Records from microphone, speaker, and system audio. Auto-detects calls and supports manual control via Power+Vol+/-.
