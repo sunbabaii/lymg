@@ -1,0 +1,25 @@
+# Build artifacts
+*.zip
+lymg-build/
+lymg-module/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test/Log files
+*.log
+test_output/
+debug/
+
+# Magisk specific
+.magisk/
+
+# Dependencies
+node_modules/
+vendor/
