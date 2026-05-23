@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # LYMG Key Listener
-# Monitors Power + Volume+ + Volume- key combination
+# Monitors Volume+ + Power key combination
 
 LYMG_DATA="/data/lymg"
 LYMG_LOG="$LYMG_DATA/lymg.log"
@@ -17,7 +17,7 @@ KEY_VOLUMEDOWN=114
 # State tracking
 power_pressed=0
 vol_up_pressed=0
-vol_down_pressed=0
+
 combo_time=0
 
 # Listen for key events using getevent
@@ -28,7 +28,7 @@ listen_with_getevent() {
     return
   fi
   
-  log_msg "Starting key listener with getevent"
+  log_msg "Starting key listener with getevent (Volume+ + Power)"
   
   getevent 2>/dev/null | while IFS=: read -r device event_type event_code event_value; do
     # Parse key events
@@ -43,29 +43,24 @@ listen_with_getevent() {
         vol_up_pressed="$event_value"
         log_msg "Volume Up: $event_value"
         ;;
-      *KEY_VOLUMEDOWN*)
-        vol_down_pressed="$event_value"
-        log_msg "Volume Down: $event_value"
-        ;;
     esac
     
-    # Check for combo (all three pressed)
-    if [ "$power_pressed" = "DOWN" ] && [ "$vol_up_pressed" = "DOWN" ] && [ "$vol_down_pressed" = "DOWN" ]; then
-      log_msg "Triple key combo detected! Triggering recording toggle"
+    # Check for combo (Volume+ AND Power pressed together)
+    if [ "$power_pressed" = "DOWN" ] && [ "$vol_up_pressed" = "DOWN" ]; then
+      log_msg "Key combo detected! (Volume+ + Power) Triggering recording toggle"
       touch "$LYMG_DATA/toggle_request"
       
       # Debounce - wait for keys to be released
       sleep 1
       power_pressed=0
       vol_up_pressed=0
-      vol_down_pressed=0
     fi
   done
 }
 
 # Alternative: Listen directly from input devices
 listen_with_input_devices() {
-  log_msg "Starting key listener with input device monitoring"
+  log_msg "Starting key listener with input device monitoring (Volume+ + Power)"
   
   # Find event devices
   local input_devices=$(find /dev/input -name "event*" -type c 2>/dev/null)
@@ -94,20 +89,15 @@ listen_with_input_devices() {
             # Volume Up (115 = 0x73)
             vol_up_pressed=1
             log_msg "Volume Up detected"
-          elif echo "$line" | grep -qE " 72"; then
-            # Volume Down (114 = 0x72)
-            vol_down_pressed=1
-            log_msg "Volume Down detected"
           fi
           
-          # Check for combo
-          if [ $power_pressed -eq 1 ] && [ $vol_up_pressed -eq 1 ] && [ $vol_down_pressed -eq 1 ]; then
-            log_msg "Triple key combo detected! Triggering recording toggle"
+          # Check for combo: Volume+ + Power
+          if [ $power_pressed -eq 1 ] && [ $vol_up_pressed -eq 1 ]; then
+            log_msg "Key combo detected! (Volume+ + Power) Triggering recording toggle"
             touch "$LYMG_DATA/toggle_request"
             
             power_pressed=0
             vol_up_pressed=0
-            vol_down_pressed=0
             sleep 2
           fi
         fi
@@ -150,7 +140,7 @@ MONITOR_PID=$!
 echo $LISTEN_PID > "$LYMG_DATA/key_listener.pid"
 echo $MONITOR_PID >> "$LYMG_DATA/key_listener.pid"
 
-log_msg "Key listener started (PIDs: $LISTEN_PID, $MONITOR_PID)"
+log_msg "Key listener started (PIDs: $LISTEN_PID, $MONITOR_PID) - Volume+ + Power combo"
 
 # Keep running
 wait
