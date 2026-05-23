@@ -1,0 +1,13 @@
+# Low power consumption audio routing
+audio.deep_buffer.media=true
+ro.config.low_ram=false
+ro.lmk.enable_userspace_lmkd=true
+
+# Call recording permissions
+persist.sys.usb.audio.recording=1
+persist.audio.record.source=4
+
+# Audio framework optimization for ColorOS
+ro.audio.recording.echocancellation=true
+audio.offload.video=true
+audio.offload.ui=true
